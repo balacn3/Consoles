@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flight Simulator Game</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #87CEEB;
+            font-family: Arial, sans-serif;
+        }
+        #game-container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background-color: #4682B4;
+            overflow: hidden;
+            border: 2px solid #333;
+        }
+        #grid {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-image: linear-gradient(rgba(255,255,255,0.2) 1px, transparent 1px),
+                            linear-gradient(90deg, rgba(255,255,255,0.2) 1px, transparent 1px);
+            background-size: 50px 50px;
+            top: 0;
+        }
+        #plane {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background-image: url('https://img.icons8.com/color/48/000000/fighter-jet.png');
+            background-size: cover;
+            transform: rotate(-90deg);
+            bottom: 50px;
+            left: 370px;
+        }
+        .obstacle {
+            position: absolute;
+            background-size: cover;
+        }
+        .bird {
+            background-image: url('https://img.icons8.com/color/48/000000/bird.png');
+        }
+        .enemy-plane {
+            background-image: url('https://img.icons8.com/color/48/000000/airplane.png');
+        }
+        .cloud {
+            background-image: url('https://img.icons8.com/color/48/000000/cloud.png');
+        }
+        .bullet {
+            position: absolute;
+            width: 5px;
+            height: 15px;
+            background-color: red;
+        }
+        .explosion {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background-image: url('https://img.icons8.com/color/48/000000/explosion.png');
+            background-size: cover;
+            z-index: 100;
+        }
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        #start-screen {
+            display: block;
+        }
+        #game-over-screen {
+            display: none;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="grid"></div>
+        <div id="plane"></div>
+        <div id="score">Score: 0</div>
+        <div id="start-screen">
+            <h1>Flight Simulator</h1>
+            <p>Instructions:</p>
+            <p>Press UP arrow to start the game and shoot bullets.</p>
+            <p>Use LEFT and RIGHT arrows to move the plane.</p>
+            <p>Avoid obstacles and shoot them to clear the path (20 points per hit).</p>
+            <p>Score 10 points every 2 seconds. Speed increases by 10% every 15 seconds.</p>
+        </div>
+        <div id="game-over-screen">
+            <h1>Game Over</h1>
+            <p id="final-score"></p>
+            <button onclick="restartGame()">Play Again</button>
+        </div>
+    </div>
+    <audio id="soundtrack" loop>
+        <source src="https://soundimage.org/wp-content/uploads/2016/05/Cyber-Dream-Loop.mp3" type="audio/mpeg">
+    </audio>
+    <script>
+        const gameContainer = document.getElementById('game-container');
+        const plane = document.getElementById('plane');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScore = document.getElementById('final-score');
+        const scoreDisplay = document.getElementById('score');
+        const soundtrack = document.getElementById('soundtrack');
+        let planeX = 370;
+        let planeY = 50;
+        let gameStarted = false;
+        let obstacles = [];
+        let bullets = [];
+        let score = 0;
+        let speed = 2;
+        let lastScoreTime = 0;
+        let lastSpeedTime = 0;
+        let gameLoop;
+
+        const obstacleTypes = [
+            { type: 'bird', width: 40, height: 40 },
+            { type: 'enemy-plane', width: 60, height: 60 },
+            { type: 'cloud', width: 80, height: 50 }
+        ];
+
+        function startGame() {
+            startScreen.style.display = 'none';
+            gameStarted = true;
+            lastScoreTime = performance.now();
+            lastSpeedTime = performance.now();
+            // Attempt to play soundtrack with error handling
+            soundtrack.play().catch((error) => {
+                console.warn('Audio playback failed:', error);
+            });
+            spawnObstacle();
+            gameLoop = requestAnimationFrame(update);
+        }
+
+        function spawnObstacle() {
+            if (!gameStarted) return;
+            const obstacleType = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
+            const obstacle = document.createElement('div');
+            obstacle.className = `obstacle ${obstacleType.type}`;
+            obstacle.style.width = `${obstacleType.width}px`;
+            obstacle.style.height = `${obstacleType.height}px`;
+            obstacle.style.top = `-${obstacleType.height}px`;
+            obstacle.style.left = `${Math.random() * (800 - obstacleType.width)}px`;
+            gameContainer.appendChild(obstacle);
+            obstacles.push({ element: obstacle, width: obstacleType.width, height: obstacleType.height });
+            setTimeout(spawnObstacle, Math.random() * 2000 + 1000);
+        }
+
+        function shootBullet() {
+            if (!gameStarted) return;
+            const bullet = document.createElement('div');
+            bullet.className = 'bullet';
+            bullet.style.left = `${planeX + 28}px`;
+            bullet.style.bottom = `${planeY + 60}px`;
+            gameContainer.appendChild(bullet);
+            bullets.push({ element: bullet });
+        }
+
+        function showExplosion(x, y, width, height) {
+            const explosion = document.createElement('div');
+            explosion.className = 'explosion';
+            // Center the explosion at the object's position
+            explosion.style.left = `${x + width / 2 - 30}px`; // 30 is half of explosion size (60px)
+            explosion.style.top = `${y + height / 2 - 30}px`; // Use top coordinate
+            gameContainer.appendChild(explosion);
+            setTimeout(() => {
+                explosion.remove();
+            }, 500);
+        }
+
+        function update(timestamp) {
+            if (!gameStarted) return;
+
+            // Update score
+            if (timestamp - lastScoreTime >= 2000) {
+                score += 10;
+                scoreDisplay.textContent = `Score: ${score}`;
+                lastScoreTime = timestamp;
+            }
+
+            // Increase speed
+            if (timestamp - lastSpeedTime >= 15000) {
+                speed *= 1.1;
+                lastSpeedTime = timestamp;
+            }
+
+            // Move plane
+            plane.style.left = `${planeX}px`;
+            plane.style.bottom = `${planeY}px`;
+
+            // Move obstacles
+            obstacles.forEach((obstacle, index) => {
+                const top = parseFloat(obstacle.element.style.top) + speed;
+                obstacle.element.style.top = `${top}px`;
+                if (top > 600) {
+                    obstacle.element.remove();
+                    obstacles.splice(index, 1);
+                } else {
+                    // Check collision with plane
+                    const planeRect = plane.getBoundingClientRect();
+                    const obsRect = obstacle.element.getBoundingClientRect();
+                    if (planeRect.left < obsRect.right &&
+                        planeRect.right > obsRect.left &&
+                        planeRect.top < obsRect.bottom &&
+                        planeRect.bottom > obsRect.top) {
+                        // Show explosion at plane's center (convert bottom to top)
+                        showExplosion(planeX, 600 - planeY - 30, 60, 60);
+                        endGame();
+                    }
+                }
+            });
+
+            // Move bullets
+            bullets.forEach((bullet, bIndex) => {
+                const bottom = parseFloat(bullet.element.style.bottom) + 5;
+                bullet.element.style.bottom = `${bottom}px`;
+                if (bottom > 600) {
+                    bullet.element.remove();
+                    bullets.splice(bIndex, 1);
+                } else {
+                    // Check collision with obstacles
+                    obstacles.forEach((obstacle, oIndex) => {
+                        const bulletRect = bullet.element.getBoundingClientRect();
+                        const obsRect = obstacle.element.getBoundingClientRect();
+                        if (bulletRect.left < obsRect.right &&
+                            bulletRect.right > obsRect.left &&
+                            bulletRect.top < obsRect.bottom &&
+                            bulletRect.bottom > obsRect.top) {
+                            // Show explosion at obstacle's center
+                            showExplosion(
+                                parseFloat(obstacle.element.style.left),
+                                parseFloat(obstacle.element.style.top),
+                                obstacle.width,
+                                obstacle.height
+                            );
+                            obstacle.element.remove();
+                            bullet.element.remove();
+                            obstacles.splice(oIndex, 1);
+                            bullets.splice(bIndex, 1);
+                            score += 20;
+                            scoreDisplay.textContent = `Score: ${score}`;
+                        }
+                    });
+                }
+            });
+
+            gameLoop = requestAnimationFrame(update);
+        }
+
+        function endGame() {
+            gameStarted = false;
+            cancelAnimationFrame(gameLoop);
+            soundtrack.pause();
+            soundtrack.currentTime = 0;
+            finalScore.textContent = `Final Score: ${score}`;
+            gameOverScreen.style.display = 'flex';
+        }
+
+        function restartGame() {
+            gameOverScreen.style.display = 'none';
+            obstacles.forEach(obstacle => obstacle.element.remove());
+            bullets.forEach(bullet => bullet.element.remove());
+            obstacles = [];
+            bullets = [];
+            score = 0;
+            speed = 2;
+            planeX = 370;
+            planeY = 50;
+            scoreDisplay.textContent = `Score: ${score}`;
+            startGame();
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp' && !gameStarted) {
+                startGame();
+            } else if (e.key === 'ArrowUp' && gameStarted) {
+                shootBullet();
+            } else if (e.key === 'ArrowLeft' && gameStarted) {
+                planeX = Math.max(0, planeX - 10);
+            } else if (e.key === 'ArrowRight' && gameStarted) {
+                planeX = Math.min(740, planeX + 10);
+            }
+        });
+
+        // Check if external resources load correctly
+        window.addEventListener('load', () => {
+            const images = document.querySelectorAll('#plane, .obstacle, .explosion');
+            images.forEach(img => {
+                img.onerror = () => {
+                    console.warn('Failed to load image:', img.style.backgroundImage);
+                };
+            });
+        });
+    </script>
+</body>
+</html>
